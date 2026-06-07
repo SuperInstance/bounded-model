@@ -358,6 +358,110 @@ extracting counterexamples.
    Testing (SAT 2003), LNCS 2919, pp. 502–518. — **MiniSat, the basis for
    most modern SAT solvers.**
 
+## API Walkthrough
+
+### CnfFormula
+
+The `CnfFormula` type is the foundation. It uses a builder pattern:
+
+```rust
+use bounded_model::cnf::CnfFormula;
+
+let f = CnfFormula::new()
+    .add_clause(vec![1, -2, 3])    // (x₁ ∨ ¬x₂ ∨ x₃)
+    .add_clause(vec![-1, 2])       // (¬x₁ ∨ x₂)
+    .add_clause(vec![-3]);         // (¬x₃)
+
+println!("{} clauses, {} variables", f.num_clauses(), f.num_variables());
+// 3 clauses, 3 variables
+```
+
+Clauses are vectors of `i32` literals. Positive means true, negative means
+false. Variable numbers start at 1.
+
+### SAT Solver
+
+The solver returns a `SatResult` with the satisfiability, assignment, and
+statistics:
+
+```rust
+use bounded_model::solver;
+
+let result = solver::solve(&formula);
+println!("SAT: {}", result.sat);
+println!("Decisions: {}", result.num_decisions);
+println!("Propagations: {}", result.num_propagations);
+
+if let Some(assignment) = result.assignment {
+    for (i, val) in assignment.iter().enumerate() {
+        println!("  x{} = {}", i + 1, if *val { "T" } else { "F" });
+    }
+}
+```
+
+### Transition Systems
+
+The `TransitionSystem` type provides a high-level API:
+
+```rust
+use bounded_model::system::{TransitionSystem, PropertyFn};
+
+let mut b = TransitionSystem::builder();
+let s0 = b.add_state("locked");
+let s1 = b.add_state("unlocked");
+let s2 = b.add_state("open");
+
+b.add_initial(s0);
+b.add_transition(s0, s1);  // locked → unlocked
+b.add_transition(s1, s2);  // unlocked → open
+b.add_transition(s2, s0);  // open → locked (auto-lock)
+
+b.property(PropertyFn::NeverReach(s2)); // "open" state should not be reachable
+
+let system = b.build();
+
+// Check which states are reachable
+let reachable = system.reachable_states();
+println!("Reachable: {:?}", reachable); // [0, 1, 2]
+```
+
+### Bounded Checking
+
+The `bound` module ties everything together:
+
+```rust
+use bounded_model::bound::{BmcConfig, check};
+
+let encoding = system.to_encoding();
+let config = BmcConfig::new(10); // check up to k=10
+let result = check(&encoding, &config);
+
+if result.sat {
+    println!("Bug found at k={}", result.k);
+} else {
+    println!("No bug found within {} steps", config.max_k);
+}
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Run `cargo fmt`, `cargo clippy`, `cargo test`
+4. Submit a pull request
+
+## Changelog
+
+### 0.1.0 (2026-06-06)
+
+- Initial release with 6 modules
+- DPLL SAT solver with unit propagation and pure literal elimination
+- CNF encoding for state transition systems
+- Bounded model checking loop
+- Counterexample trace extraction
+- Transition system builder with serializable properties
+- 60 tests, edition 2024
+
 ## License
 
 MIT
